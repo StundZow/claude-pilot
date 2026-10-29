@@ -1,0 +1,21 @@
+# Données locales (à la racine) : réglages, journaux, retours (enregistrements et captures), moteurs
+/data/
+/retours/
+/models/
+
+# Environnement et builds
+.venv/
+build/
+dist/
+*.spec
+build_notes.md
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Raccourci local (chemins propres à une machine)
+*.lnk
+
+# Audio de test généré par tools/make_tts.ps1
+tests/data/tts_fr.wav
+tests/data/tts_fr_words.json

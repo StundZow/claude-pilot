@@ -1,0 +1,35 @@
+[project]
+name = "claudepilot"
+version = "0.1.0"
+description = "Retours vocaux avec captures d'écran horodatées, prêts pour Claude Code"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "PySide6-Essentials>=6.8",
+    "sounddevice>=0.5",
+    "soundfile>=0.12",
+    "numpy>=2.0",
+    "mss>=9.0",
+    "Pillow>=11.0",
+    "soxr>=0.5",
+    "faster-whisper>=1.1",
+    "onnx-asr[hub]",
+    # 1.24.x = dernière série compilée pour CUDA 12 (les librairies CUDA 13 n'ont pas de version Windows sur PyPI).
+    "onnxruntime-gpu[cuda,cudnn]>=1.22,<1.25,!=1.24.1",
+    "nvidia-cublas-cu12",
+    "nvidia-cudnn-cu12>=9",
+]
+
+[dependency-groups]
+dev = [
+    "pyinstaller>=6.22.3",
+    "pytest>=8",
+]
+
+[tool.uv]
+package = false
+# faster-whisper dépend d'onnxruntime (CPU), qui entre en conflit avec onnxruntime-gpu :
+# on l'écarte, onnxruntime-gpu fournit le même module (CPU + CUDA).
+override-dependencies = ["onnxruntime ; sys_platform == 'never'"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

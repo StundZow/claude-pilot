@@ -1,0 +1,8 @@
+Bon, je teste l'application que tu m'as faite pour Home Assistant.
+Regarde, le bouton Valider est collé au bord droit, il devrait être centré sous le formulaire.
+Et quand je clique dessus, il ne se passe rien, la console affiche une erreur rouge. Capture.
+Point suivant.
+Le menu du haut, j'adore, ne touche à rien. Par contre la police est trop petite sur mon grand écran.
+Je regarde aussi le fichier de configuration, et la clé API n'est pas chargée au démarrage.
+Capture. Annule la capture.
+Dernier point : quand je redimensionne la fenêtre, le tableau déborde à droite, il faudrait une barre de défilement horizontale.
