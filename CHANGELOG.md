@@ -3,6 +3,11 @@
 Chaque version publiée avec `uv run python release.py X.Y.Z` reprend la section correspondante :
 c'est ce texte que Claude Pilot affiche quand il propose la mise à jour.
 
+## 1.0.1
+
+- **Désinstallation corrigée** : elle pouvait s'arrêter sur certains fichiers du Python privé (chemins de
+  plus de 260 caractères, raccourci de dossier créé par uv) et laisser le dossier d'installation en place.
+
 ## 1.0.0
 
 Première version publique.

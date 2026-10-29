@@ -100,11 +100,33 @@ def wait_for_pid(pid: int, timeout: float = 60) -> None:
 
 def _remove_tree(path: Path) -> None:
     def retry(func, target, _exc):
-        os.chmod(target, stat.S_IWRITE)  # fichiers en lecture seule (Python géré par uv)
-        func(target)
+        if func is os.path.islink:
+            # Jonction (uv en crée une : cpython-3.13 -> cpython-3.13.x) : on retire le lien, pas ce qu'il vise.
+            os.rmdir(target)
+            return
+        # Fichier en lecture seule, ou suppression encore « en attente » (l'antivirus inspecte les fichiers
+        # récents) : le dossier paraît plein une fraction de seconde. On réessaie un court moment.
+        for attempt in range(20):
+            try:
+                os.chmod(target, stat.S_IWRITE)
+                func(target)
+                return
+            except FileNotFoundError:
+                return
+            except OSError:
+                if attempt == 19:
+                    raise
+                time.sleep(0.1)
 
-    if path.exists():
-        shutil.rmtree(path, onexc=retry)
+    # Chemin étendu « \\?\ » : au fond du Python privé, certains fichiers dépassent la limite des 260 caractères
+    # de Windows dès que le dossier d'installation est un peu profond ; sans ce préfixe on ne peut plus les effacer.
+    target = str(path.resolve())
+    if not target.startswith("\\\\?\\"):
+        target = "\\\\?\\" + target
+    if os.path.isjunction(target) or os.path.islink(target):
+        os.rmdir(target)
+    elif os.path.exists(target):
+        shutil.rmtree(target, onexc=retry)
 
 
 def put_app(install_dir: Path, zip_path: Path) -> None:
