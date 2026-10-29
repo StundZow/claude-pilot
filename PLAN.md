@@ -37,6 +37,7 @@ Faire des retours à Claude Code aussi vite qu'en partage d'écran avec un humai
 - Trois moteurs interchangeables, comparaison et retranscription d'un retour.
 - Export `retour.md` et `dernier_retour.md`, message pour Claude Code copié à l'arrêt, commande `/retour` installable depuis les Réglages.
 - Reprise après plantage.
+- Publication sur GitHub (StundZow/claude-pilot) : installateur qui récupère la dernière version, mises à jour proposées au lancement avec le changelog, désinstallation propre (`release.py X.Y.Z` publie une version).
 - Tests :
   - 21 tests unitaires ;
   - simulation de bout en bout (Parakeet et Whisper) ;
@@ -53,4 +54,4 @@ Faire des retours à Claude Code aussi vite qu'en partage d'écran avec un humai
 4. Serveur MCP : Claude récupère le dernier retour, texte et images dans l'ordre, sans fichier intermédiaire.
 5. Exports pour humains : PDF, et vidéo MP4 (diaporama + voix + sous-titres).
 6. Mode dictée partout (maintenir une touche pour écrire avec la voix) et mode tutoriel (une capture à chaque clic).
-7. Historique avec recherche, `.exe` autonome, lancement avec Windows.
+7. Historique avec recherche, lancement avec Windows (option).
