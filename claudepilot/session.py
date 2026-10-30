@@ -62,9 +62,12 @@ class Session:
         if not candidates:
             return None
         cap = max(candidates, key=lambda c: c.t)
+        self.cancel(cap)
+        return cap
+
+    def cancel(self, cap: Capture) -> None:
         cap.cancelled = True
         self.log("cancel", raw_file=cap.raw_file)
-        return cap
 
     def add_utterance(self, utt: Utterance) -> None:
         self.utterances.append(utt)

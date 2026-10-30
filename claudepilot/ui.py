@@ -11,10 +11,10 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QToolButton, QWi
 from . import winapi
 
 APP_ICON = Path(__file__).parent / "assets" / "icon.ico"
-GLYPHS = {
+GLYPHS = {  # Segoe Fluent Icons
     "camera": "", "pause": "", "play": "", "stop": "", "mic": "",
     "close": "", "settings": "", "folder": "", "copy": "", "refresh": "",
-    "delete": "",
+    "delete": "", "prev": "", "next": "",
 }
 
 

@@ -11,6 +11,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
+from PIL import Image
 from PySide6.QtCore import QFile, QObject, QTimer, Signal
 from PySide6.QtGui import QGuiApplication, QImage
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
@@ -34,6 +35,16 @@ from .updater import Updater
 from .window import MainWindow
 
 log = logging.getLogger(__name__)
+
+# « là », « ici », « tu vois » restent dans le texte : ce sont des mots du quotidien. Ils ne capturent que si c'est
+# utile : pas dans les 3 s autour d'une autre capture, ni la même vue (écran et souris) dans les 20 s.
+EVERYDAY_GAP = 3.0
+SAME_VIEW_WINDOW = 20.0
+
+
+def to_qimage(image: Image.Image) -> QImage:
+    data = image.convert("RGB").tobytes("raw", "RGB")
+    return QImage(data, image.width, image.height, image.width * 3, QImage.Format.Format_RGB888).copy()
 
 
 def describe(folder: Path) -> dict:
@@ -74,6 +85,8 @@ class Controller(QObject):
         self.last_result: ExportResult | None = None
         self.selected: Path | None = None
         self._saves: list[Future] = []
+        self._views: dict[str, Frame] = {}  # vignette de chaque capture, pour ne pas reprendre la même vue
+        self._everyday: set[str] = set()  # captures prises sur « là », « tu vois »… : un « regarde » juste après les remplace
         self._png = ThreadPoolExecutor(max_workers=2, thread_name_prefix="png")
         self._task: str | None = None
         self._quit_after = False
@@ -106,6 +119,7 @@ class Controller(QObject):
         w.delete_clicked.connect(self.delete_selected)
         w.recover_clicked.connect(self.recover_selected)
         w.close_requested.connect(self.quit)
+        w.live_image = self._live_image
         self.updater = Updater(self.window, self.cfg, self.force_quit)
 
         self.hotkeys = winapi.HotkeyManager(self.hotkey.emit)
@@ -242,6 +256,7 @@ class Controller(QObject):
             self._fail(f"Dossier des retours inaccessible : {exc}")
             return
         self.session, self.session_engine, self._saves = session, self.cfg.engine, []
+        self._views, self._everyday = {}, set()
         try:
             vad = StreamingVAD()
             recorder = Recorder(self.cfg.microphone)
@@ -314,7 +329,7 @@ class Controller(QObject):
         """Fenêtres de Claude Pilot à ignorer pour viser l'écran (appelé depuis le fil de capture)."""
         return [r for r in (self.overlay.physical_rect(), self.window.physical_rect()) if r]
 
-    def _store(self, frame: Frame, source: str, trigger: str) -> None:
+    def _store(self, frame: Frame, source: str, trigger: str) -> str:
         session = self.session
         name = f"{len(session.captures) + 1:03d}_{source}_{frame.t:07.2f}s.png"
         path = session.raw_dir / name
@@ -323,9 +338,7 @@ class Controller(QObject):
         def save() -> None:
             image = frame.image()
             image.save(path, "PNG", compress_level=1)
-            thumb = render_capture(image, label, frame.cursor, 900)
-            data = thumb.tobytes("raw", "RGB")
-            qimage = QImage(data, thumb.width, thumb.height, thumb.width * 3, QImage.Format.Format_RGB888).copy()
+            qimage = to_qimage(render_capture(image, label, frame.cursor, 900))
             self.run(lambda: self._thumbnail_ready(name, qimage))
 
         self._saves.append(self._png.submit(save))
@@ -333,9 +346,11 @@ class Controller(QObject):
             round(frame.t, 3), source, name, frame.monitor.number,
             (frame.monitor.width, frame.monitor.height), frame.cursor, trigger,
         ))
+        self._views[name] = Frame(frame.t, frame.monitor, frame.cursor, sig=frame.sig)
         self._live_dirty = True
         self._sound("capture")
         self.overlay.flash()
+        return name
 
     def _thumbnail_ready(self, name: str, image: QImage) -> None:
         self.window.add_live_image(f"cap:{name}", image)
@@ -367,7 +382,11 @@ class Controller(QObject):
             self._sound("phrase")
 
     def _voice_capture(self, action: triggers.VoiceAction) -> bool:
-        if any(not c.cancelled and abs(c.t - action.t) < 1.5 for c in self.session.captures):
+        recent = [c for c in self.session.captures if not c.cancelled and abs(c.t - action.t) < EVERYDAY_GAP]
+        if action.everyday and recent:
+            return False  # une capture vient d'être prise
+        replaced = [c for c in recent if c.raw_file in self._everyday and c.t <= action.t]
+        if any(c not in replaced and abs(c.t - action.t) < 1.5 for c in recent):
             return False  # déjà capturé au même moment (raccourci + mot)
         frame = self.screen.frame_at(action.t) if self.screen else None
         if (frame is None or abs(frame.t - action.t) > 2.0) and self.live and self.screen:
@@ -375,8 +394,36 @@ class Controller(QObject):
         if frame is None:
             log.warning("Pas d'image pour la capture vocale de %s", fmt_time(action.t))
             return False
-        self._store(frame, "voix", action.phrase)
+        if action.everyday and self._same_view(frame):
+            return False
+        for cap in replaced:  # « là… regarde » : on montre le moment du « regarde »
+            self.session.cancel(cap)
+        name = self._store(frame, "voix", action.phrase)
+        if action.everyday:
+            self._everyday.add(name)
         return True
+
+    def _same_view(self, frame: Frame) -> bool:
+        """La dernière capture montre déjà la même chose, depuis peu : une de plus n'apprendrait rien à Claude."""
+        previous = [c for c in self.session.captures if not c.cancelled and c.t <= frame.t + 0.5]
+        if not previous:
+            return False
+        last = max(previous, key=lambda c: c.t)
+        view = self._views.get(last.raw_file)
+        return view is not None and frame.t - last.t < SAME_VIEW_WINDOW and view.same_view(frame)
+
+    def _live_image(self, name: str) -> QImage | None:
+        """Capture de l'enregistrement en cours, en grand (l'aperçu n'en garde qu'une réduction)."""
+        session = self.session
+        cap = next((c for c in session.captures if c.raw_file == name), None) if session else None
+        if cap is None:
+            return None
+        try:
+            with Image.open(session.raw_dir / name) as raw:
+                return to_qimage(render_capture(raw, f"{fmt_time(cap.t)} · écran {cap.monitor}", cap.cursor, 2560))
+        except Exception:
+            log.debug("Capture %s pas encore enregistrée", name, exc_info=True)
+            return None
 
     def stop_recording(self) -> None:
         if not self.live:

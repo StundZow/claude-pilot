@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import logging
+import math
 import queue
 import re
 import threading
@@ -23,6 +24,9 @@ new_capturer = getattr(mss, "MSS", None) or mss.mss  # mss 10 renomme mss.mss en
 CURSOR_COLOR = (232, 30, 30)
 BAND_COLOR = (32, 33, 36)
 BAND_HEIGHT = 36
+SIGNATURE_SIZE = (64, 36)
+SAME_CURSOR = 0.05  # souris déplacée de moins de 5 % de la largeur de l'écran : même endroit
+SAME_PIXELS = 2.5  # écart moyen des vignettes (sur 255) en dessous duquel l'écran n'a pas changé
 
 
 @dataclass(frozen=True)
@@ -70,11 +74,26 @@ class Frame:
     cursor: tuple[int, int] | None  # position de la souris dans l'image
     img: Image.Image | None = None  # capture directe (gardée telle quelle)
     jpeg: bytes | None = None  # image de la boîte noire (compressée en mémoire)
+    sig: bytes | None = None  # vignette en gris : reconnaître deux vues identiques sans garder les images
 
     def image(self) -> Image.Image:
         if self.img is not None:
             return self.img
         return Image.open(io.BytesIO(self.jpeg)).convert("RGB")
+
+    def same_view(self, other: Frame) -> bool:
+        """Même écran, même contenu à peu de chose près, souris presque au même endroit."""
+        if self.monitor != other.monitor or not self.sig or not other.sig or len(self.sig) != len(other.sig):
+            return False
+        if (self.cursor is None) != (other.cursor is None):
+            return False
+        if self.cursor and other.cursor and math.dist(self.cursor, other.cursor) > SAME_CURSOR * self.monitor.width:
+            return False
+        return sum(abs(a - b) for a, b in zip(self.sig, other.sig)) / len(self.sig) < SAME_PIXELS
+
+
+def signature(img: Image.Image) -> bytes:
+    return img.resize(SIGNATURE_SIZE, Image.BILINEAR, reducing_gap=2.0).convert("L").tobytes()
 
 
 class ScreenService(threading.Thread):
@@ -176,7 +195,8 @@ class ScreenService(threading.Thread):
         shot = sct.grab(monitor.region)
         img = Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
         inside = cursor is not None and monitor.contains(*cursor)
-        frame = Frame(t, monitor, (cursor[0] - monitor.left, cursor[1] - monitor.top) if inside else None)
+        frame = Frame(t, monitor, (cursor[0] - monitor.left, cursor[1] - monitor.top) if inside else None,
+                      sig=signature(img))
         if keep:
             frame.img = img
         else:

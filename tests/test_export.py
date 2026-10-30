@@ -3,13 +3,12 @@ from pathlib import Path
 
 from PIL import Image
 
-from claudepilot.config import Config
+from claudepilot.config import DEFAULT_KEPT, DEFAULT_TRIGGERS, Config
 from claudepilot.export import capture_filename, compute_layout, export_session, render_markdown
 from claudepilot.model import Capture, Utterance, Word
 from claudepilot.session import Session
 
-TRIGGERS = ["capture d'écran", "capture", "screenshot", "screen", "regarde"]
-KEPT = ["regarde"]
+TRIGGERS, KEPT = DEFAULT_TRIGGERS, DEFAULT_KEPT
 
 
 def utt(text: str, start: float, step: float = 0.4) -> Utterance:
@@ -81,6 +80,21 @@ def test_point_suivant_cree_des_sections():
 def test_annule_la_capture_disparait_du_texte():
     md = render([utt("Capture. Annule la capture. ensuite", 0.0)], [])
     assert "Annule" not in body(md) and "ensuite" in body(md)
+
+
+def test_retirer_la_capture_ne_laisse_rien_dans_le_texte():
+    md = render([utt("le bouton rouge. Retire la capture. Supprime la capture d'écran. ensuite", 0.0)], [])
+    assert "Retire" not in body(md) and "d'écran" not in body(md) and "ensuite" in body(md)
+
+
+def test_la_reste_et_le_marqueur_suit():
+    md = render([utt("Le bouton là est décalé", 2.0)], [cap(3.1, "voix")])
+    assert "Le bouton là **[C1 · 0:03]** est décalé" in md
+
+
+def test_parler_de_la_capture_d_avant_garde_la_phrase():
+    md = render([utt("comme sur la capture d'avant le menu", 0.0)], [])
+    assert "comme sur la capture d'avant le menu" in md
 
 
 def test_liste_finale_avec_chemins_absolus():

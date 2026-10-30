@@ -100,7 +100,11 @@ class SettingsDialog(QDialog):
         form.addRow("Mots qui déclenchent une capture", self.triggers)
         self.kept = QLineEdit(", ".join(cfg.triggers_kept))
         form.addRow("…gardés dans le texte", self.kept)
-        self.commands = QCheckBox("« annule la capture », « point suivant »")
+        form.addRow("", self._note(
+            "Parmi les mots gardés, « regarde » capture à chaque fois. Ceux de tous les jours (« là », « ici », "
+            "« tu vois ») ne capturent que si l'écran ou la souris ont bougé depuis la dernière capture."
+        ))
+        self.commands = QCheckBox("« retire la capture » (ou annule, supprime…), « point suivant »")
         self.commands.setChecked(cfg.voice_commands)
         form.addRow("Commandes vocales", self.commands)
         self.max_px = QSpinBox()

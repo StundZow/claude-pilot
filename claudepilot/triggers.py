@@ -1,4 +1,4 @@
-"""Mots déclencheurs (« capture », « regarde »…) et commandes vocales repérés dans la transcription."""
+"""Mots déclencheurs (« capture », « regarde », « là »…) et commandes vocales repérés dans la transcription."""
 from __future__ import annotations
 
 import re
@@ -8,16 +8,31 @@ from dataclasses import dataclass
 from .model import Word
 
 COMMANDS = {
-    "cancel": (
-        "annule la capture", "annule la dernière capture", "annule capture",
-        "supprime la capture", "efface la capture",
+    "point": (
+        "point suivant", "nouveau point", "sujet suivant",
+        "passons au point suivant", "on passe au point suivant", "passe au point suivant",
     ),
-    "point": ("point suivant", "nouveau point", "sujet suivant"),
 }
+# « Retire la capture », « annule la dernière capture d'écran », « supprime le screen » : un verbe à l'impératif,
+# quelques petits mots, puis la capture. Sans le mot « capture », « supprime ça » reste une remarque pour Claude.
+CANCEL_VERBS = {
+    "annule", "supprime", "efface", "retire", "enlève", "vire", "oublie", "jette",
+    "annulez", "supprimez", "effacez", "retirez", "enlevez",
+}
+CANCEL_NOUNS = {"capture", "screen", "screenshot"}
+_CANCEL_FILLERS = {"la", "le", "l", "cette", "ce", "cet", "ma", "mon", "moi", "toute", "dernière", "dernier",
+                   "précédente", "précédent"}
+_SCREEN = {"d'écran", "d'ecran"}
 # Verbes qui ne déclenchent une capture qu'à l'impératif : « Regarde, ce bouton » oui, « je regarde » non.
 IMPERATIVE_ONLY = {"regarde", "regardez", "vois", "voyez", "check"}
-_SUBJECTS = {"je", "j", "tu", "il", "elle", "on", "nous", "vous", "ils", "elles"}
+_SUBJECTS = {"je", "j", "tu", "il", "elle", "on", "nous", "vous", "ils", "elles", "ça", "ca", "cela", "qui"}
 _CLITICS = {"ne", "n", "me", "m", "te", "t", "se", "s", "le", "la", "les", "l", "lui", "leur", "y", "en"}
+# « Sur la capture d'avant », « cette capture » : on parle d'une capture, on n'en demande pas une nouvelle.
+_DETERMINERS = {"la", "le", "l", "les", "cette", "ce", "cet", "ces", "ma", "mon", "mes", "ta", "ton", "tes", "sa",
+                "son", "ses", "du", "des", "au", "aux"}
+_ORDINALS = {"première", "premier", "deuxième", "troisième", "dernière", "dernier", "autre", "même", "précédente",
+             "précédent"}
+_TAKE = {"fais", "fait", "faire", "prends", "prend", "prendre", "refais", "reprends"}
 _EDGE_PUNCT = re.compile(r"^[^\w']+|[^\w']+$")
 
 
@@ -28,6 +43,7 @@ class VoiceAction:
     words: tuple[int, ...]  # index des mots concernés
     remove: bool  # retirer ces mots du texte final
     phrase: str
+    everyday: bool = False  # « là », « ici », « tu vois » : mot du quotidien, capture seulement si elle apporte du neuf
 
 
 def norm(token: str) -> str:
@@ -55,6 +71,36 @@ def _is_imperative(tokens: list[str], i: int) -> bool:
     return True
 
 
+def _cancel_length(tokens: list[str], i: int) -> int:
+    """Nombre de mots de la commande « retire la capture » qui commence au mot i (0 s'il n'y en a pas)."""
+    if tokens[i].split("-")[0] not in CANCEL_VERBS or not _is_imperative(tokens, i):
+        return 0
+    j = i + 1
+    while j < len(tokens) and j - i <= 3 and tokens[j] in _CANCEL_FILLERS:
+        j += 1
+    if j < len(tokens) and tokens[j] in CANCEL_NOUNS:
+        j += 1
+        if j < len(tokens) and tokens[j] in _SCREEN:
+            j += 1
+        return j - i
+    if j > i + 1:  # « supprime la carte pure d'écran » : « capture » mal reconnu, mais « d'écran » ne trompe pas
+        for k in (j + 1, j + 2):
+            if k < len(tokens) and tokens[k] in _SCREEN:
+                return k + 1 - i
+    return 0
+
+
+def _names_a_capture(tokens: list[str], i: int) -> bool:
+    """« sur la capture d'avant », « l'autre screen » : un déterminant devant, sans « fais » ni « prends »."""
+    before = [part for tok in tokens[max(0, i - 4):i] for part in tok.split("'") if part]
+    k = len(before) - 1
+    while k >= 0 and before[k] in _ORDINALS:
+        k -= 1
+    if k < 0 or before[k] not in _DETERMINERS:
+        return False
+    return k == 0 or before[k - 1] not in _TAKE
+
+
 def detect(words: list[Word], triggers: list[str], kept: list[str], commands: bool = True) -> list[VoiceAction]:
     """Repère les captures vocales et les commandes, du plus long motif au plus court."""
     tokens = [norm(w.text) for w in words]
@@ -72,20 +118,24 @@ def detect(words: list[Word], triggers: list[str], kept: list[str], commands: bo
     actions: list[VoiceAction] = []
     i = 0
     while i < len(tokens):
+        n = _cancel_length(tokens, i) if commands else 0
+        if n:
+            phrase = " ".join(w.text for w in words[i:i + n])
+            actions.append(VoiceAction("cancel", words[i + n - 1].end, tuple(range(i, i + n)), True, phrase))
+            i += n
+            continue
+        parts = tokens[i].split("-")  # « là-bas », « ce bouton-là », « regarde-moi »
         for kind, pattern, remove, phrase in patterns:
             n = len(pattern)
-            window = tokens[i:i + n]
-            if len(window) < n:
-                continue
-            if n == 1:
-                matched = window[0] == pattern[0] or window[0].split("-")[0] == pattern[0]
-            else:
-                matched = tuple(window) == pattern
+            matched = pattern[0] in parts if n == 1 else tuple(tokens[i:i + n]) == pattern
             if not matched:
                 continue
             if kind == "capture" and n == 1 and pattern[0] in IMPERATIVE_ONLY and not _is_imperative(tokens, i):
                 continue
-            actions.append(VoiceAction(kind, words[i + n - 1].end, tuple(range(i, i + n)), remove, phrase))
+            if kind == "capture" and remove and _names_a_capture(tokens, i):
+                continue
+            everyday = kind == "capture" and not remove and pattern[0] not in IMPERATIVE_ONLY
+            actions.append(VoiceAction(kind, words[i + n - 1].end, tuple(range(i, i + n)), remove, phrase, everyday))
             i += n
             break
         else:

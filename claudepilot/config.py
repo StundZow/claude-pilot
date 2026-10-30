@@ -52,6 +52,14 @@ ENGINE_LABELS = {
 # Banc d'essai du 29/10/2026 (RTX 5080) : Parakeet 0 % d'erreur et 69× le temps réel, sans mot inventé.
 DEFAULT_ENGINE = "parakeet-v3"
 
+DEFAULT_TRIGGERS = ["capture d'écran", "capture", "screenshot", "screen", "regarde", "tu vois", "là", "ici"]
+DEFAULT_KEPT = ["regarde", "tu vois", "là", "ici"]  # mots du quotidien : ils restent dans le texte
+# Listes par défaut des versions précédentes : remplacées par les nouvelles tant que l'utilisateur n'y a pas touché.
+_FORMER_DEFAULTS = {
+    "triggers": [["capture d'écran", "capture", "screenshot", "screen", "regarde"]],
+    "triggers_kept": [["regarde"]],
+}
+
 log = logging.getLogger(__name__)
 
 
@@ -63,11 +71,9 @@ class Config:
     retours_dir: str = str(DEFAULT_RETOURS_DIR)
     hotkey_record: str = "Ctrl+Alt+Space"
     hotkey_capture: str = "F8"
-    triggers: list[str] = field(
-        default_factory=lambda: ["capture d'écran", "capture", "screenshot", "screen", "regarde"]
-    )
-    triggers_kept: list[str] = field(default_factory=lambda: ["regarde"])  # restent dans le texte
-    voice_commands: bool = True  # « annule la capture », « point suivant »
+    triggers: list[str] = field(default_factory=lambda: list(DEFAULT_TRIGGERS))
+    triggers_kept: list[str] = field(default_factory=lambda: list(DEFAULT_KEPT))  # restent dans le texte
+    voice_commands: bool = True  # « retire la capture », « point suivant »
     lexicon: list[str] = field(
         default_factory=lambda: ["Claude", "Claude Code", "Home Assistant", "OBS", "API", "JSON", "Python"]
     )
@@ -90,7 +96,7 @@ class Config:
                 data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
                 known = {f.name for f in fields(cls)}
                 for key, value in data.items():
-                    if key in known:
+                    if key in known and value not in _FORMER_DEFAULTS.get(key, []):
                         setattr(cfg, key, value)
             except (OSError, ValueError):
                 log.exception("config.json illisible, réglages par défaut utilisés")

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import re
+from functools import partial
 from pathlib import Path
 from typing import Callable
 
@@ -16,6 +17,7 @@ from PySide6.QtWidgets import (
 from . import winapi
 from .config import ENGINE_LABELS, Config
 from .ui import APP_ICON, LevelMeter, glyph_icon
+from .viewer import CaptureViewer
 
 STYLE = """
 QMainWindow, QWidget#root { background: #111113; }
@@ -81,9 +83,10 @@ WELCOME = """
 et chaque capture à l'instant exact où tu l'as prise.</p>
 <p><b>1.</b> Clique sur <b>Démarrer un retour</b>, ou appuie sur <b>{record}</b>, même depuis une autre appli.</p>
 <p><b>2.</b> Parle normalement. Pour capturer l'écran où est ta souris : <b>{capture}</b>, le bouton <b>Capturer</b>,
-ou dis « capture » / « regarde ».</p>
+ou dis « capture », « regarde », « tu vois », « là » ou « ici ».</p>
 <p><b>3.</b> Termine avec <b>{record}</b> : le message pour Claude Code est copié. Colle-le avec <b>Ctrl+V</b>.</p>
-<p style="color:#71717a;">Commandes vocales : « annule la capture », « point suivant ».</p>
+<p style="color:#71717a;">Commandes vocales : « retire la capture », « point suivant ». Clique sur une capture pour la voir
+en grand.</p>
 """
 UNFINISHED = """
 <h2 style="color:#fbbf24;">Enregistrement interrompu</h2>
@@ -97,8 +100,13 @@ _IMAGE = re.compile(r"^!\[(.*?)\]\(<?(.*?)>?\)$")
 _CHIP = '<span style="background-color:#1e3a8a; color:#dbeafe;">&nbsp;{}&nbsp;</span>'
 
 
-def to_html(md: str, image_url: Callable[[str], str], image_width: int = 460) -> str:
-    """Aperçu lisible d'un retour.md. Son format vient de export.py : pas besoin d'un vrai moteur Markdown."""
+def to_html(
+    md: str, image_url: Callable[[str], str], image_width: int = 460, images: list[tuple[str, str]] | None = None
+) -> str:
+    """Aperçu lisible d'un retour.md. Son format vient de export.py : pas besoin d'un vrai moteur Markdown.
+
+    images : reçoit (légende, adresse) de chaque capture ; chaque image devient alors un lien « capture:n ».
+    """
     out: list[str] = []
     in_capture_list = False
     for line in md.splitlines():
@@ -116,9 +124,12 @@ def to_html(md: str, image_url: Callable[[str], str], image_width: int = 460) ->
         elif line.startswith("### "):
             out.append(f'<h3 style="color:#93c5fd;">{html.escape(line[4:])}</h3>')
         elif (image := _IMAGE.match(line)) is not None:
-            src = html.escape(image_url(image.group(2)), quote=True)
-            out.append(f'<p><img src="{src}" width="{image_width}"><br>'
-                       f'<span style="color:#a1a1aa;">{html.escape(image.group(1))}</span></p>')
+            src = image_url(image.group(2))
+            tag = f'<img src="{html.escape(src, quote=True)}" width="{image_width}">'
+            if images is not None:
+                tag = f'<a href="capture:{len(images)}" title="Clique pour la voir en grand">{tag}</a>'
+                images.append((image.group(1), src))
+            out.append(f'<p>{tag}<br><span style="color:#a1a1aa;">{html.escape(image.group(1))}</span></p>')
         elif line.startswith("*") and line.endswith("*") and not line.startswith("**"):
             out.append(f'<p style="color:#71717a; margin-top:18px;"><i>{html.escape(line.strip("*"))}</i></p>')
         else:
@@ -137,6 +148,7 @@ class Preview(QTextBrowser):
         super().__init__()
         self.images: dict[str, QImage] = {}
         self.setOpenLinks(False)
+        self.document().setDefaultStyleSheet("a { text-decoration: none; }")
 
     def loadResource(self, kind, url: QUrl):
         image_kind = QTextDocument.ResourceType.ImageResource
@@ -178,6 +190,9 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(STYLE)
         self._hwnd = 0
         self._visible = False
+        self._images: list[tuple[str, str]] = []  # captures affichées dans l'aperçu : (légende, adresse)
+        # Capture de l'enregistrement en cours, en grand (fourni par le contrôleur) ; None : la réduction suffira
+        self.live_image: Callable[[str], QImage | None] = lambda _name: None
 
         root = QWidget()
         root.setObjectName("root")
@@ -291,6 +306,7 @@ class MainWindow(QMainWindow):
         col.addWidget(card)
 
         self.preview = Preview()
+        self.preview.anchorClicked.connect(self._open_capture)
         col.addWidget(self.preview, 1)
 
         actions = QHBoxLayout()
@@ -347,8 +363,8 @@ class MainWindow(QMainWindow):
         if live:
             self.record_btn.setText("■   Terminer et préparer le retour")
             self.hint.setText(
-                f"{record} pour terminer · {capture}, le bouton Capturer, « capture » ou « regarde » : écran sous ta "
-                "souris · « annule la capture », « point suivant »"
+                f"{record} pour terminer · {capture}, le bouton Capturer, « capture », « regarde », « là »… : écran "
+                "sous ta souris · « retire la capture », « point suivant »"
             )
         elif mode == "finishing":
             self.record_btn.setText("Transcription des dernières phrases…")
@@ -356,8 +372,8 @@ class MainWindow(QMainWindow):
         else:
             self.record_btn.setText("●   Démarrer un retour")
             self.hint.setText(
-                f"Ou {record}, même depuis une autre appli. Pendant l'enregistrement : {capture} ou « capture » pour "
-                "capturer l'écran sous ta souris."
+                f"Ou {record}, même depuis une autre appli. Pendant l'enregistrement : {capture}, « capture » ou "
+                "« regarde » pour capturer l'écran sous ta souris. Clique sur une capture pour la voir en grand."
             )
         self.capture_btn.setVisible(live)
         self.capture_btn.setToolTip(f"Capturer l'écran sous la souris ({capture})")
@@ -430,28 +446,47 @@ class MainWindow(QMainWindow):
 
     # --- aperçu
     def show_welcome(self, cfg: Config) -> None:
+        self._images = []
         self.preview.setHtml(WELCOME.format(record=winapi.display_hotkey(cfg.hotkey_record),
                                             capture=winapi.display_hotkey(cfg.hotkey_capture)))
 
     def show_unfinished(self) -> None:
+        self._images = []
         self.preview.setHtml(UNFINISHED)
 
     def show_retour(self, folder: Path, md: str) -> None:
         self.preview.images = {k: v for k, v in self.preview.images.items() if k.startswith("cap:")}
-        self.preview.setHtml(to_html(md, lambda ref: QUrl.fromLocalFile(str(folder / ref)).toString()))
+        self._images = []
+        self.preview.setHtml(to_html(md, lambda ref: QUrl.fromLocalFile(str(folder / ref)).toString(),
+                                     images=self._images))
         self.preview.verticalScrollBar().setValue(0)
 
     def show_markdown(self, md: str) -> None:
+        self._images = []
         self.preview.setMarkdown(md)
         self.preview.verticalScrollBar().setValue(0)
 
     def show_live(self, md: str) -> None:
         bar = self.preview.verticalScrollBar()
         follow = bar.value() >= bar.maximum() - 40
-        content = to_html(md, lambda ref: ref, image_width=380)
+        self._images = []
+        content = to_html(md, lambda ref: ref, image_width=380, images=self._images)
         self.preview.setHtml(content or '<p style="color:#9a9aa2;">Je t\'écoute…</p>')
         if follow:
             QTimer.singleShot(0, lambda: bar.setValue(bar.maximum()))
+
+    def _open_capture(self, url: QUrl) -> None:
+        """Clic sur une capture de l'aperçu : elle s'ouvre en grand, avec les autres à portée de flèche."""
+        if url.scheme() != "capture" or not url.path().isdigit() or int(url.path()) >= len(self._images):
+            return
+        items = [(label, partial(self._full_image, src)) for label, src in self._images]
+        CaptureViewer(items, int(url.path()), self).show()
+
+    def _full_image(self, src: str) -> QImage | None:
+        if src.startswith("cap:"):  # enregistrement en cours : l'image brute, sinon la réduction de l'aperçu
+            return self.live_image(src[4:]) or self.preview.images.get(src)
+        image = QImage(QUrl(src).toLocalFile())
+        return None if image.isNull() else image
 
     def add_live_image(self, key: str, image: QImage) -> None:
         self.preview.images[key] = image

@@ -3,6 +3,18 @@
 Chaque version publiée avec `uv run python release.py X.Y.Z` reprend la section correspondante :
 c'est ce texte que Claude Pilot affiche quand il propose la mise à jour.
 
+## 1.0.2
+
+- **Nouveaux mots pour capturer** : « tu vois », « là » et « ici », en plus de « capture » et « regarde ». Ce sont
+  des mots de tous les jours : ils restent dans le texte et ne capturent que si l'écran ou la souris ont bougé
+  depuis la dernière capture. Un « regarde » juste après un « là » garde le moment du « regarde ».
+- **« Retire la capture »** retire bien la dernière capture, comme « annule », « supprime » ou « efface la
+  capture (d'écran) ». Avant, cette phrase en prenait une nouvelle. Les commandes disparaissent entièrement du
+  texte, même quand le mot « capture » est mal reconnu.
+- **Parler d'une capture n'en prend plus** : « comme sur la capture d'avant » reste tel quel dans le texte.
+- **Captures en grand** : clique sur une capture dans la fenêtre pour l'afficher en plein écran, puis passe aux
+  autres avec les flèches ou la molette. Échap ou un clic pour fermer.
+
 ## 1.0.1
 
 - **Désinstallation corrigée** : elle pouvait s'arrêter sur certains fichiers du Python privé (chemins de

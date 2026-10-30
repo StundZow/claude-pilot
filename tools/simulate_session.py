@@ -23,7 +23,7 @@ from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
 from claudepilot import app as app_module  # noqa: E402
 from claudepilot.config import DATA_DIR  # noqa: E402
-from claudepilot.screen import Frame, Monitor  # noqa: E402
+from claudepilot.screen import Frame, Monitor, signature  # noqa: E402
 
 SR = 16000
 SPEED = 4.0  # audio envoyé 4 fois plus vite que le temps réel
@@ -34,10 +34,12 @@ MONITOR = Monitor(1, 2, 0, 0, 2560, 1440)
 class FakeRecorder:
     """Même interface que audio.Recorder, alimentée par un fichier WAV."""
 
+    AUDIO = ROOT / "tests" / "data" / "tts_fr.wav"
+
     def __init__(self, device: str = "", on_audio=None, on_boundary=None):
         self.on_audio, self.on_boundary = on_audio, on_boundary
         self.level_db = -20.0
-        pcm, _ = sf.read(ROOT / "tests" / "data" / "tts_fr.wav", dtype="int16")
+        pcm, _ = sf.read(self.AUDIO, dtype="int16")
         self._pcm = np.concatenate([pcm, np.zeros(SR, dtype=np.int16)])
         self._n = 0
         self._paused = False
@@ -121,7 +123,8 @@ class FakeScreen:
     def stop(self) -> None: ...
 
     def _frame(self, t: float) -> Frame:
-        return Frame(t, MONITOR, (2395, 945), img=synthetic_screen(t))  # la souris pointe le bouton « Valider »
+        img = synthetic_screen(t)
+        return Frame(t, MONITOR, (2395, 945), img=img, sig=signature(img))  # la souris pointe le bouton « Valider »
 
     def capture(self, timeout: float = 3.0) -> Frame:
         return self._frame(self.clock())
@@ -141,7 +144,10 @@ class NoHotkeys:
 def main() -> None:
     from PySide6.QtWidgets import QApplication
 
-    engine = sys.argv[1] if len(sys.argv) > 1 else None
+    engine = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1] != "-" else None
+    hotkey = len(sys.argv) <= 2
+    if not hotkey:
+        FakeRecorder.AUDIO = Path(sys.argv[2])
     out_root = DATA_DIR / "simulation"
     shutil.rmtree(out_root, ignore_errors=True)
     app_module.Recorder = FakeRecorder
@@ -162,9 +168,10 @@ def main() -> None:
     recorder = ctrl.recorder
 
     def script():
-        while recorder.now() < HOTKEY_AT:
-            time.sleep(0.01)
-        ctrl.run(lambda: ctrl.capture("raccourci"))
+        if hotkey:
+            while recorder.now() < HOTKEY_AT:
+                time.sleep(0.01)
+            ctrl.run(lambda: ctrl.capture("raccourci"))
         recorder.wait_end()
         ctrl.run(ctrl.stop_recording)
 

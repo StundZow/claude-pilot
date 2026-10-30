@@ -17,15 +17,17 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
 
 import simulate_session as sim  # noqa: E402
-from PySide6.QtCore import Qt  # noqa: E402
+from PySide6.QtCore import Qt, QUrl  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from dataclasses import fields  # noqa: E402
 
 from claudepilot import app as app_module  # noqa: E402
+from claudepilot import window as window_module  # noqa: E402
 from claudepilot.audio import input_devices  # noqa: E402
 from claudepilot.config import Config  # noqa: E402
 from claudepilot.settings_dialog import SettingsDialog  # noqa: E402
+from claudepilot.viewer import CaptureViewer  # noqa: E402
 
 
 def pump(qt: QApplication, seconds: float) -> None:
@@ -35,12 +37,29 @@ def pump(qt: QApplication, seconds: float) -> None:
         time.sleep(0.01)
 
 
+class HiddenViewer(CaptureViewer):
+    """La vraie visionneuse, ouverte comme par un clic, mais sans apparaître à l'écran."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
+
+
+def grab_viewer(qt: QApplication, ctrl, path: Path) -> None:
+    ctrl.window._open_capture(QUrl("capture:0"))
+    viewer = next(w for w in qt.topLevelWidgets() if isinstance(w, CaptureViewer) and w.isVisible())
+    pump(qt, 0.3)
+    viewer.grab().save(str(path))
+    viewer.close()
+
+
 def main() -> None:
     out = Path(sys.argv[1])
     shutil.rmtree(out, ignore_errors=True)
     out.mkdir(parents=True)
     app_module.Recorder = sim.FakeRecorder
     app_module.ScreenService = sim.FakeScreen
+    window_module.CaptureViewer = HiddenViewer
 
     qt = QApplication(sys.argv)
     ctrl = app_module.Controller(qt)
@@ -90,12 +109,14 @@ def main() -> None:
             pump(qt, 0.5)
             ctrl.window.grab().save(str(out / "2_en_direct.png"))
             ctrl.overlay.grab().save(str(out / "3_barre.png"))
+            grab_viewer(qt, ctrl, out / "3b_capture_en_grand_en_direct.png")
         if time.perf_counter() - t0 > 300:
             raise SystemExit("Simulation bloquée")
 
     pump(qt, 0.8)
     ctrl.window.grab().save(str(out / "4_retour_pret.png"))
     ctrl.overlay.grab().save(str(out / "5_barre_prete.png"))
+    grab_viewer(qt, ctrl, out / "5b_capture_en_grand.png")
     dialog = SettingsDialog(ctrl.cfg, input_devices(), parent=ctrl.window,
                             selected_label=app_module.describe(ctrl.selected)["title"])
     dialog.setAttribute(Qt.WidgetAttribute.WA_DontShowOnScreen, True)
