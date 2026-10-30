@@ -44,6 +44,15 @@ BG, BASE, INPUT, TEXT, MUTED, ACCENT, ACCENT_HI = (
     "#18181B", "#232327", "#2F2F35", "#E8E8EA", "#9A9AA2", "#6D28D9", "#7C3AED")
 
 
+def child_env(**extra: str) -> dict[str, str]:
+    """Environnement des programmes que lance l'installateur, sans les variables du lanceur PyInstaller : sinon un
+    installateur relancé se croirait notre sous-processus et prendrait nos fichiers temporaires, effacés dès notre
+    fermeture (et l'appli les transmettrait à l'installateur de sa prochaine mise à jour)."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("_PYI_")}
+    env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+    return env | extra
+
+
 def resource(name: str) -> Path:
     """Fichier embarqué dans l'installateur (uv.exe, icône)."""
     if FROZEN:
@@ -72,7 +81,7 @@ def hand_over(release: dict, args: list[str], progress=lambda d, t: None) -> Non
     asset = github.find_asset(release, github.SETUP_ASSET)
     dest = Path(tempfile.gettempdir()) / f"Claude-Pilot-Setup-{release.get('tag_name', 'new')}.exe"
     github.download_asset(asset, dest, progress, private=bool(release.get("_token_used")))
-    subprocess.Popen([str(dest), *args, "--no-online"], close_fds=True)
+    subprocess.Popen([str(dest), *args, "--no-online"], close_fds=True, env=child_env())
 
 
 def fetch_app(zip_override: str | None, progress) -> tuple[Path, str]:
@@ -90,6 +99,23 @@ def fetch_app(zip_override: str | None, progress) -> tuple[Path, str]:
 
 
 # --- étapes
+def leave_install_dir(target: Path) -> bool:
+    """Lancé par l'appli, l'installateur hérite de son dossier courant (app\\) : tant qu'un processus s'y trouve,
+    Windows refuse de renommer ou de supprimer ce dossier. On se relance donc depuis le dossier temporaire (en exe,
+    le lanceur de PyInstaller garderait sinon le dossier de départ). True : la relance a pris le relais."""
+    try:
+        inside = Path.cwd().resolve().is_relative_to(target.resolve())
+    except OSError:
+        return False
+    if not inside:
+        return False
+    if not FROZEN:
+        os.chdir(tempfile.gettempdir())
+        return False
+    subprocess.Popen([sys.executable, *sys.argv[1:]], cwd=tempfile.gettempdir(), close_fds=True, env=child_env())
+    return True
+
+
 def wait_for_pid(pid: int, timeout: float = 60) -> None:
     synchronize = 0x00100000
     handle = ctypes.windll.kernel32.OpenProcess(synchronize, False, pid)
@@ -180,10 +206,9 @@ def describe_uv_line(line: str) -> str | None:
 def sync_env(install_dir: Path, status) -> None:
     """Installe (ou met à jour) Python et les composants, exactement aux versions du fichier uv.lock."""
     uv = put_uv(install_dir)
-    env = dict(os.environ,
-               UV_PROJECT_ENVIRONMENT=str(install_dir / "venv"),
-               UV_PYTHON_INSTALL_DIR=str(install_dir / "runtime" / "python"),
-               UV_PYTHON_PREFERENCE="only-managed")
+    env = child_env(UV_PROJECT_ENVIRONMENT=str(install_dir / "venv"),
+                    UV_PYTHON_INSTALL_DIR=str(install_dir / "runtime" / "python"),
+                    UV_PYTHON_PREFERENCE="only-managed")
     cmd = [str(uv), "sync", "--frozen", "--no-dev", "--python", PYTHON_VERSION,
            "--project", str(installinfo.app_dir(install_dir))]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
@@ -202,7 +227,7 @@ def fetch_model(install_dir: Path, progress) -> bool:
     """Moteur de transcription par défaut. Un échec n'est pas bloquant : l'appli le téléchargera elle-même."""
     proc = subprocess.Popen([str(installinfo.python(install_dir)), "-m", "claudepilot.models", DEFAULT_ENGINE],
                             cwd=str(installinfo.app_dir(install_dir)), stdout=subprocess.PIPE,
-                            stderr=subprocess.DEVNULL, text=True, creationflags=NO_WINDOW)
+                            stderr=subprocess.DEVNULL, text=True, creationflags=NO_WINDOW, env=child_env())
     for line in proc.stdout:
         parts = line.split()
         if len(parts) == 3 and parts[0] == "PROGRESS":
@@ -265,7 +290,7 @@ def update(target: Path, wait_pid: int | None, launch_after: bool, status, progr
 
 def launch(install_dir: Path, *args: str) -> None:
     subprocess.Popen([str(installinfo.pythonw(install_dir)), "-m", "claudepilot", *args],
-                     cwd=str(installinfo.app_dir(install_dir)), close_fds=True)
+                     cwd=str(installinfo.app_dir(install_dir)), close_fds=True, env=child_env())
 
 
 def uninstall(target: Path, silent: bool) -> int:
@@ -273,7 +298,8 @@ def uninstall(target: Path, silent: bool) -> int:
     if running_inside and "--from-temp" not in sys.argv:  # un exe ne peut pas supprimer son propre dossier
         copy = Path(tempfile.gettempdir()) / "Claude-Pilot-Uninstall.exe"
         shutil.copyfile(sys.executable, copy)
-        subprocess.Popen([str(copy), *sys.argv[1:], "--from-temp"], close_fds=True)
+        subprocess.Popen([str(copy), *sys.argv[1:], "--from-temp"], cwd=tempfile.gettempdir(), close_fds=True,
+                         env=child_env())
         return 0
     root = None
     if not silent:
@@ -462,12 +488,18 @@ def main() -> int:
     target = Path(_arg(args, "--dir") or installinfo.registered_location() or installinfo.default_install_dir())
     silent = "--silent" in args
     if "--uninstall" in args:
-        return uninstall(target, silent)
+        return 0 if leave_install_dir(target) else uninstall(target, silent)
     if "--update" in args:
+        if leave_install_dir(target):
+            return 0
         pid = _arg(args, "--wait-pid")
         wait_pid, launch_after = (int(pid) if pid else None), "--no-launch" not in args
         if silent:
-            update(target, wait_pid, launch_after, print, lambda d, t: None)
+            try:
+                update(target, wait_pid, launch_after, print, lambda d, t: None)
+            except Exception as exc:
+                print(f"ERREUR : {exc}")
+                return 1
             return 0
         root = tk.Tk()
         UpdateWindow(root, target, wait_pid, launch_after)

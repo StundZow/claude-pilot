@@ -171,10 +171,15 @@ class Updater(QObject):
         """L'installateur attend la fermeture de Claude Pilot, remplace le code et le relance."""
         if self._dialog is not None:
             self._dialog.close()
+        # Depuis le dossier temporaire (resté dans app\, l'installateur ne pourrait pas le remplacer), et sans les
+        # variables qu'un installateur a pu laisser à l'appli en la lançant (le nouveau se croirait son sous-processus).
+        env = {k: v for k, v in os.environ.items() if not k.startswith("_PYI_")}
+        env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
         try:
             subprocess.Popen(
                 [setup, "--update", "--dir", str(INSTALL_DIR), "--wait-pid", str(os.getpid())],
-                close_fds=True, creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+                cwd=str(Path(setup).parent), env=env, close_fds=True,
+                creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
             )
         except OSError as exc:
             QMessageBox.critical(self.window, APP_NAME, f"Impossible de lancer la mise à jour :\n{exc}")

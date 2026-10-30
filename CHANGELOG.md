@@ -3,6 +3,17 @@
 Chaque version publiée avec `uv run python release.py X.Y.Z` reprend la section correspondante :
 c'est ce texte que Claude Pilot affiche quand il propose la mise à jour.
 
+## 1.0.3
+
+- **Mise à jour depuis l'appli réparée** : elle s'arrêtait sur « Claude Pilot est ouvert », alors que l'appli
+  était bien fermée. L'installateur, lancé depuis le dossier de l'appli, empêchait lui-même de le remplacer.
+
+Si tu passes directement de la 1.0.1 à cette version, tu as aussi les nouveautés de la 1.0.2 :
+
+- « tu vois », « là » et « ici » capturent l'écran, seulement s'il a changé ou si la souris a bougé.
+- « Retire la capture » (ou annule, supprime, efface…) retire la dernière capture et disparaît du texte.
+- Clique sur une capture dans la fenêtre pour la voir en plein écran.
+
 ## 1.0.2
 
 - **Nouveaux mots pour capturer** : « tu vois », « là » et « ici », en plus de « capture » et « regarde ». Ce sont
