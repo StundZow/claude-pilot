@@ -15,7 +15,7 @@ Faire des retours à Claude Code aussi vite qu'en partage d'écran avec un humai
 | Transcription phrase par phrase (détecteur de voix Silero) | Le texte ne bouge plus une fois écrit, et le résultat est prêt en 1 à 2 s à l'arrêt |
 | Boîte noire de 60 s en mémoire (2 images/s), jamais écrite sur le disque | Une capture vocale prend l'image du moment exact du mot, pas celle d'une seconde plus tard |
 | On capture l'écran sous la souris, pas les 3 écrans collés | 7 040 px de large seraient réduits et illisibles par Claude |
-| Export à 2000 px max, avec un bandeau « Cn · m:ss · écran n » et la souris entourée | La correspondance capture / phrase ne se perd jamais. 2000 px passe la règle de l'API au-delà de 20 images |
+| Export à 2000 px max, avec un bandeau « Cn · m:ss · écran n » (souris entourée en option, désactivée par défaut : l'IA prenait le cercle pour un élément de l'appli) | La correspondance capture / phrase ne se perd jamais. 2000 px passe la règle de l'API au-delà de 20 images |
 | Dossier lu par Claude Code (`retour.md` + PNG), plutôt qu'un collage dans le chat | Pas de limite de 20 images par message, et aucune étape manuelle |
 | Barre flottante exclue des captures (`SetWindowDisplayAffinity`) | Vérifié par `tools/check_overlay.py` (écart 0,0 contre 170 pour une fenêtre normale) |
 | Raccourcis par `RegisterHotKey`, `F8` pris seulement pendant l'enregistrement | Pas de hook clavier (rien de suspect pour l'antivirus), et `F8` reste libre le reste du temps |

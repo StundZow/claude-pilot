@@ -24,7 +24,7 @@ disable-model-invocation: true
 ---
 Lis mon dernier retour vocal : `{latest}`.
 
-C'est la transcription de ce que j'ai dit à voix haute en te montrant mon écran. Les marqueurs comme [C2 · 0:31] indiquent la capture d'écran prise à ce moment précis de la phrase : lis chaque capture listée en bas du fichier (outil Read), dans l'ordre, avant de répondre. Sur les captures, le cercle rouge montre où était ma souris.
+C'est la transcription de ce que j'ai dit à voix haute en te montrant mon écran. Les marqueurs comme [C2 · 0:31] indiquent la capture d'écran prise à ce moment précis de la phrase : lis chaque capture listée en bas du fichier (outil Read), dans l'ordre, avant de répondre.
 
 Ensuite, traite mes remarques point par point. $ARGUMENTS
 """

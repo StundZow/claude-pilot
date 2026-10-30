@@ -78,6 +78,7 @@ class Config:
         default_factory=lambda: ["Claude", "Claude Code", "Home Assistant", "OBS", "API", "JSON", "Python"]
     )
     export_max_px: int = 2000
+    cursor_ring: bool = False  # cercle rouge autour de la souris sur les captures (l'IA peut le prendre pour l'appli)
     ring_fps: float = 2.0
     ring_seconds: int = 60
     copy_prompt_on_stop: bool = True

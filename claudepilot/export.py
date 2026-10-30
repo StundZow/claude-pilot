@@ -120,6 +120,7 @@ def render_markdown(
     engine_label: str,
     folder: Path,
     image_ref: Callable[[int], str],
+    cursor_ring: bool = False,
 ) -> str:
     count = len(captures)
     plural = "s" if count > 1 else ""
@@ -133,7 +134,8 @@ def render_markdown(
             "> - `[Cn · m:ss]` = capture d'écran prise à cet instant précis de la phrase. "
             "Lis chaque capture listée en bas de ce fichier (outil Read) avant de répondre.",
             "> - Sur les captures, le cercle rouge montre où était ma souris (souvent ce dont je parle : "
-            "« ce bouton », « ici »). Le bandeau du haut rappelle le numéro et le moment.",
+            "« ce bouton », « ici »). Le bandeau du haut rappelle le numéro et le moment." if cursor_ring else
+            "> - Le bandeau en haut de chaque capture rappelle son numéro et son moment.",
         ]
     out += ["> - Quelques mots peuvent être mal reconnus : fie-toi au sens général et aux captures.", ""]
 
@@ -274,7 +276,7 @@ def export_session(session, cfg) -> ExportResult:
         name = capture_filename(n, cap.t)
         with Image.open(session.raw_dir / cap.raw_file) as raw:
             label = f"C{n} · {fmt_time(cap.t)} · écran {cap.monitor}"
-            rendered = render_capture(raw, label, cap.cursor, cfg.export_max_px)
+            rendered = render_capture(raw, label, cap.cursor if cfg.cursor_ring else None, cfg.export_max_px)
         rendered.save(folder / name, "PNG", compress_level=6)
         names.append(name)
         images.append(folder / name)
@@ -283,10 +285,12 @@ def export_session(session, cfg) -> ExportResult:
     common = (session.utterances, captures, names, layout, session.started, session.duration,
               session.engine_label, folder)
     md_path = folder / RETOUR_NAME
-    md_path.write_text(render_markdown(*common, image_ref=lambda n: names[n - 1]), encoding="utf-8")
+    md_path.write_text(render_markdown(*common, image_ref=lambda n: names[n - 1], cursor_ring=cfg.cursor_ring),
+                       encoding="utf-8")
     latest_path = folder.parent / LATEST_NAME
     latest_path.write_text(
-        render_markdown(*common, image_ref=lambda n: f"<{(folder / names[n - 1]).as_posix()}>"),
+        render_markdown(*common, image_ref=lambda n: f"<{(folder / names[n - 1]).as_posix()}>",
+                        cursor_ring=cfg.cursor_ring),
         encoding="utf-8",
     )
     session.save()

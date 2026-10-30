@@ -334,11 +334,12 @@ class Controller(QObject):
         name = f"{len(session.captures) + 1:03d}_{source}_{frame.t:07.2f}s.png"
         path = session.raw_dir / name
         label = f"{fmt_time(frame.t)} · écran {frame.monitor.number}"
+        cursor = frame.cursor if self.cfg.cursor_ring else None
 
         def save() -> None:
             image = frame.image()
             image.save(path, "PNG", compress_level=1)
-            qimage = to_qimage(render_capture(image, label, frame.cursor, 900))
+            qimage = to_qimage(render_capture(image, label, cursor, 900))
             self.run(lambda: self._thumbnail_ready(name, qimage))
 
         self._saves.append(self._png.submit(save))
@@ -420,7 +421,8 @@ class Controller(QObject):
             return None
         try:
             with Image.open(session.raw_dir / name) as raw:
-                return to_qimage(render_capture(raw, f"{fmt_time(cap.t)} · écran {cap.monitor}", cap.cursor, 2560))
+                cursor = cap.cursor if self.cfg.cursor_ring else None
+                return to_qimage(render_capture(raw, f"{fmt_time(cap.t)} · écran {cap.monitor}", cursor, 2560))
         except Exception:
             log.debug("Capture %s pas encore enregistrée", name, exc_info=True)
             return None
@@ -543,7 +545,8 @@ class Controller(QObject):
                                 self.cfg.voice_commands)
         duration = self.recorder.now() if self.recorder is not None else session.duration
         md = render_markdown(session.utterances, captures, names, layout, session.started, duration,
-                             self._engine_label(), session.folder, image_ref=lambda n: f"cap:{names[n - 1]}")
+                             self._engine_label(), session.folder, image_ref=lambda n: f"cap:{names[n - 1]}",
+                             cursor_ring=self.cfg.cursor_ring)
         self.window.show_live(md)
 
     def _engine_label(self) -> str:

@@ -113,6 +113,11 @@ class SettingsDialog(QDialog):
         self.max_px.setValue(cfg.export_max_px)
         self.max_px.setSuffix(" px")
         form.addRow("Taille max des captures", self.max_px)
+        self.cursor_ring = QCheckBox("Entourer ma souris en rouge")
+        self.cursor_ring.setChecked(cfg.cursor_ring)
+        self.cursor_ring.setToolTip("Montre ce que tu pointes, mais l'IA peut prendre le cercle pour un élément "
+                                    "de l'écran : désactivé par défaut.")
+        form.addRow("Sur les captures", self.cursor_ring)
         self.ring_fps = QDoubleSpinBox()
         self.ring_fps.setRange(0.0, 5.0)
         self.ring_fps.setSingleStep(0.5)
@@ -252,6 +257,7 @@ class SettingsDialog(QDialog):
         cfg.voice_commands = self.commands.isChecked()
         cfg.lexicon = [t.strip() for t in self.lexicon.toPlainText().splitlines() if t.strip()]
         cfg.export_max_px = self.max_px.value()
+        cfg.cursor_ring = self.cursor_ring.isChecked()
         cfg.ring_fps = self.ring_fps.value()
         cfg.copy_prompt_on_stop = self.copy_prompt.isChecked()
         cfg.sounds = self.sounds.isChecked()

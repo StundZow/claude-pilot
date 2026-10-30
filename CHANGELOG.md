@@ -3,6 +3,11 @@
 Chaque version publiée avec `uv run python release.py X.Y.Z` reprend la section correspondante :
 c'est ce texte que Claude Pilot affiche quand il propose la mise à jour.
 
+## 1.0.4
+
+- **Plus de cercle rouge autour de la souris** sur les captures : l'IA pouvait le prendre pour un élément de
+  l'écran. Il reste disponible en option : Réglages → Captures → « Entourer ma souris en rouge ».
+
 ## 1.0.3
 
 - **Mise à jour depuis l'appli réparée** : elle s'arrêtait sur « Claude Pilot est ouvert », alors que l'appli

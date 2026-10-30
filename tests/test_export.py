@@ -121,3 +121,18 @@ def test_export_complet_et_reprise_apres_plantage(tmp_path):
     assert len(reloaded.captures) == 1
     assert reloaded.utterances[0].text == "Regarde le bouton ici"
     assert reloaded.duration == 5.0
+
+
+def test_cercle_rouge_seulement_si_demande(tmp_path):
+    session = Session.create(tmp_path)
+    Image.new("RGB", (2560, 1440), (200, 200, 200)).save(session.raw_dir / "a.png")
+    session.add_capture(Capture(1.0, "raccourci", "a.png", 2, (2560, 1440), (1280, 720)))
+    session.add_utterance(utt("Regarde le bouton", 0.5))
+    session.finish(3.0, "Parakeet TDT v3 (GPU)")
+    for ring in (False, True):
+        result = export_session(session, Config(cursor_ring=ring))
+        with Image.open(result.images[0]) as out:
+            red = sum(n for n, (r, g, b) in out.getcolors(1 << 20) if r > 180 and g < 90 and b < 90)
+        md = result.md_path.read_text(encoding="utf-8")
+        assert (red > 0) == ring and ("cercle rouge" in md) == ring
+    assert not Config().cursor_ring  # désactivé par défaut : l'IA peut prendre le cercle pour l'appli
